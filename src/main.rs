@@ -1,3 +1,6 @@
+mod map;
+
+use map::Map;
 use minifb::{Key, Window, WindowOptions};
 
 const WIDTH: usize = 800;
@@ -8,6 +11,11 @@ fn from_rgb(r: u8, g: u8, b: u8) -> u32 {
 }
 
 fn main() {
+    let map = Map::level_1();
+    // Impresion temporal para verificar el mapa por consola;
+    // se reemplaza por el render 3D en el siguiente commit.
+    map.debug_print();
+
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
 
     let mut window = Window::new("Raycaster", WIDTH, HEIGHT, WindowOptions::default())
