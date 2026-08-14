@@ -1,4 +1,5 @@
 mod map;
+mod minimap;
 mod player;
 mod raycaster;
 
@@ -88,6 +89,7 @@ fn main() {
         }
 
         raycaster::render(&mut buffer, WIDTH, HEIGHT, &map, &player);
+        minimap::render(&mut buffer, WIDTH, HEIGHT, &map, &player);
 
         window
             .update_with_buffer(&buffer, WIDTH, HEIGHT)

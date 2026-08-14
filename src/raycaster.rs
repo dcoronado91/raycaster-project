@@ -13,7 +13,7 @@ pub fn wall_color(wall_id: u8) -> u32 {
     }
 }
 
-/// Oscurece un color RGB multiplicando cada canal por `factor` (0.0 a 1.0).
+/// Oscurece (o aclara) un color RGB multiplicando cada canal por `factor`.
 fn shade_color(color: u32, factor: f64) -> u32 {
     let r = ((color >> 16) & 0xFF) as f64;
     let g = ((color >> 8) & 0xFF) as f64;
@@ -24,6 +24,51 @@ fn shade_color(color: u32, factor: f64) -> u32 {
     let b = (b * factor).clamp(0.0, 255.0) as u32;
 
     (r << 16) | (g << 8) | b
+}
+
+/// Resolucion (en texeles) de las texturas proceduales.
+const TEX_SIZE: usize = 64;
+
+/// Color de un texel (tx, ty) de la textura de `wall_id`. En vez de cargar
+/// imagenes, cada tipo de pared se genera con un patron matematico simple
+/// aplicado como un factor de brillo sobre su color base.
+fn texture_pixel(wall_id: u8, tx: usize, ty: usize) -> u32 {
+    let pattern_factor = match wall_id {
+        WALL_BRICK => brick_pattern(tx, ty),
+        WALL_STONE => stone_pattern(tx, ty),
+        WALL_WOOD => wood_pattern(tx, ty),
+        WALL_MOSS => moss_pattern(tx, ty),
+        _ => 1.0,
+    };
+    shade_color(wall_color(wall_id), pattern_factor)
+}
+
+fn brick_pattern(tx: usize, ty: usize) -> f64 {
+    const BRICK_W: usize = 16;
+    const BRICK_H: usize = 8;
+    let row_offset = if (ty / BRICK_H) % 2 == 0 { 0 } else { BRICK_W / 2 };
+    let is_mortar = ty % BRICK_H == 0 || (tx + row_offset) % BRICK_W == 0;
+    if is_mortar { 0.55 } else { 1.0 }
+}
+
+fn stone_pattern(tx: usize, ty: usize) -> f64 {
+    const BLOCK: usize = 8;
+    if ((tx / BLOCK) + (ty / BLOCK)) % 2 == 0 { 0.82 } else { 1.05 }
+}
+
+fn wood_pattern(tx: usize, ty: usize) -> f64 {
+    const PLANK: usize = 8;
+    if tx % PLANK == 0 {
+        0.6
+    } else {
+        1.0 - ((ty * 37 + tx * 17) % 13) as f64 * 0.015
+    }
+}
+
+fn moss_pattern(tx: usize, ty: usize) -> f64 {
+    // Hash barato para lograr un moteado pseudoaleatorio sin depender de assets.
+    let h = (tx.wrapping_mul(374_761_393) ^ ty.wrapping_mul(668_265_263)) & 0xFF;
+    0.7 + (h as f64 / 255.0) * 0.5
 }
 
 /// Pinta las paredes visibles usando DDA (Digital Differential Analysis):
@@ -88,13 +133,36 @@ pub fn render(buffer: &mut [u32], width: usize, height: usize, map: &Map, player
         let draw_start = (-line_height / 2 + height as i32 / 2).max(0);
         let draw_end = (line_height / 2 + height as i32 / 2).min(height as i32 - 1);
 
+        // Punto exacto donde el rayo toco la pared (0.0..1.0 a lo largo de la cara),
+        // usado como coordenada horizontal de la textura.
+        let wall_hit = if side == 0 {
+            player.pos_y + perp_wall_dist * ray_dir_y
+        } else {
+            player.pos_x + perp_wall_dist * ray_dir_x
+        };
+        let wall_x = wall_hit - wall_hit.floor();
+        let mut tex_x = (wall_x * TEX_SIZE as f64) as usize;
+        // Evita que la textura salga espejada dependiendo de la cara/direccion del rayo.
+        if (side == 0 && ray_dir_x > 0.0) || (side == 1 && ray_dir_y < 0.0) {
+            tex_x = TEX_SIZE - 1 - tex_x;
+        }
+        tex_x = tex_x.min(TEX_SIZE - 1);
+
         // Caras "horizontales" (side 1) un poco mas oscuras que las "verticales" (side 0)
         // para que se note el contorno de las paredes; ademas se atenua con la distancia.
         let side_factor = if side == 1 { 0.7 } else { 1.0 };
         let distance_factor = (1.0 - (perp_wall_dist / MAX_SHADE_DISTANCE).min(1.0) * 0.8).max(0.2);
-        let color = shade_color(wall_color(wall_id), side_factor * distance_factor);
+        let shade_factor = side_factor * distance_factor;
+
+        let step_tex_y = TEX_SIZE as f64 / line_height.max(1) as f64;
+        let mut tex_pos =
+            (draw_start as f64 - height as f64 / 2.0 + line_height as f64 / 2.0) * step_tex_y;
 
         for y in draw_start..=draw_end {
+            let tex_y = (tex_pos as usize).min(TEX_SIZE - 1);
+            tex_pos += step_tex_y;
+
+            let color = shade_color(texture_pixel(wall_id, tex_x, tex_y), shade_factor);
             buffer[y as usize * width + x] = color;
         }
     }
