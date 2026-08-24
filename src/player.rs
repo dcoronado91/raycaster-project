@@ -41,19 +41,9 @@ impl Player {
         self.plane_y = old_plane_x * sin_a + self.plane_y * cos_a;
     }
 
-    /// Intenta mover al jugador por (dx, dy). Cada eje se prueba por separado
-    /// contra el mapa para poder "deslizar" sobre una pared en vez de
-    /// quedar trabado cuando el movimiento no es perfectamente perpendicular.
+    /// Intenta mover al jugador por (dx, dy), deslizando sobre las paredes.
     pub fn try_move(&mut self, map: &Map, dx: f64, dy: f64) {
-        let new_x = self.pos_x + dx;
-        if !map.is_wall((new_x + dx.signum() * COLLISION_RADIUS) as i32, self.pos_y as i32) {
-            self.pos_x = new_x;
-        }
-
-        let new_y = self.pos_y + dy;
-        if !map.is_wall(self.pos_x as i32, (new_y + dy.signum() * COLLISION_RADIUS) as i32) {
-            self.pos_y = new_y;
-        }
+        map.move_point(&mut self.pos_x, &mut self.pos_y, dx, dy, COLLISION_RADIUS);
     }
 }
 

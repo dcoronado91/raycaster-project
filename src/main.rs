@@ -1,8 +1,11 @@
+mod agent;
 mod map;
 mod minimap;
 mod player;
 mod raycaster;
+mod sprite;
 
+use agent::Agent;
 use map::Map;
 use minifb::{Key, MouseMode, Window, WindowOptions};
 use player::Player;
@@ -20,8 +23,12 @@ fn from_rgb(r: u8, g: u8, b: u8) -> u32 {
 fn main() {
     let map = Map::level_1();
     let mut player = Player::new(12.0, 12.0);
+    let spawn_x = player.pos_x;
+    let spawn_y = player.pos_y;
+    let mut agent_smith = Agent::new(21.0, 21.0);
 
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+    let mut z_buffer: Vec<f64> = vec![0.0; WIDTH];
 
     let mut window = Window::new("Raycaster", WIDTH, HEIGHT, WindowOptions::default())
         .unwrap_or_else(|e| panic!("no se pudo crear la ventana: {e}"));
@@ -29,9 +36,10 @@ fn main() {
     window.set_target_fps(60);
     window.set_cursor_visibility(false);
 
-    let ceiling_color = from_rgb(40, 40, 40);
-    let floor_color = from_rgb(70, 70, 70);
+    let ceiling_color = from_rgb(4, 10, 4);
+    let floor_color = from_rgb(8, 16, 8);
 
+    let start_time = Instant::now();
     let mut last_frame = Instant::now();
     let mut last_mouse_x = window
         .get_mouse_pos(MouseMode::Pass)
@@ -77,6 +85,15 @@ fn main() {
             player.try_move(&map, move_x / len * step, move_y / len * step);
         }
 
+        agent_smith.update(&map, &player, dt);
+        if agent_smith.is_touching_player(&player) {
+            // Reinicio temporal al detectar contacto; la pantalla de Game Over
+            // llega cuando conectemos la maquina de estados (proximo commit).
+            eprintln!("Un Agente te atrapo. Reiniciando posicion...");
+            player.pos_x = spawn_x;
+            player.pos_y = spawn_y;
+        }
+
         for y in 0..HEIGHT {
             let row_color = if y < HEIGHT / 2 {
                 ceiling_color
@@ -88,7 +105,21 @@ fn main() {
             }
         }
 
-        raycaster::render(&mut buffer, WIDTH, HEIGHT, &map, &player);
+        raycaster::render(&mut buffer, &mut z_buffer, WIDTH, HEIGHT, &map, &player);
+
+        let elapsed = start_time.elapsed().as_secs_f64();
+        let walk_phase = (elapsed * 4.0) as i32;
+        sprite::render(
+            &mut buffer,
+            &z_buffer,
+            WIDTH,
+            HEIGHT,
+            &player,
+            agent_smith.x,
+            agent_smith.y,
+            |tx, ty| agent::agent_pixel(tx, ty, walk_phase),
+        );
+
         minimap::render(&mut buffer, WIDTH, HEIGHT, &map, &player);
 
         window

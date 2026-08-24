@@ -1,8 +1,8 @@
 pub const WALL_NONE: u8 = 0;
-pub const WALL_BRICK: u8 = 1;
-pub const WALL_STONE: u8 = 2;
-pub const WALL_WOOD: u8 = 3;
-pub const WALL_MOSS: u8 = 4;
+pub const WALL_CONCRETE: u8 = 1; // corredores de concreto desgastado
+pub const WALL_SERVER: u8 = 2; // bloques de servidores/racks
+pub const WALL_CIRCUIT: u8 = 3; // paneles con cableado/conductos
+pub const WALL_CODE: u8 = 4; // paneles con "codigo" verde brillante
 
 pub struct Map {
     pub width: usize,
@@ -15,7 +15,7 @@ impl Map {
     /// (limite del mundo), asi el raycaster no necesita chequear bordes por separado.
     pub fn get(&self, x: i32, y: i32) -> u8 {
         if x < 0 || y < 0 || x as usize >= self.width || y as usize >= self.height {
-            return WALL_BRICK;
+            return WALL_CONCRETE;
         }
         self.cells[y as usize * self.width + x as usize]
     }
@@ -24,24 +24,40 @@ impl Map {
         self.get(x, y) != WALL_NONE
     }
 
+    /// Intenta desplazar un punto (x, y) por (dx, dy), deslizando sobre las
+    /// paredes: cada eje se resuelve por separado para no trabar el
+    /// movimiento diagonal contra una esquina. La usan tanto el jugador
+    /// como los agentes que lo persiguen.
+    pub fn move_point(&self, x: &mut f64, y: &mut f64, dx: f64, dy: f64, radius: f64) {
+        let new_x = *x + dx;
+        if !self.is_wall((new_x + dx.signum() * radius) as i32, *y as i32) {
+            *x = new_x;
+        }
+
+        let new_y = *y + dy;
+        if !self.is_wall(*x as i32, (new_y + dy.signum() * radius) as i32) {
+            *y = new_y;
+        }
+    }
+
     pub fn level_1() -> Self {
         let width = 24;
         let height = 24;
         let mut cells = vec![WALL_NONE; width * height];
 
         for x in 0..width {
-            cells[x] = WALL_BRICK;
-            cells[(height - 1) * width + x] = WALL_BRICK;
+            cells[x] = WALL_CONCRETE;
+            cells[(height - 1) * width + x] = WALL_CONCRETE;
         }
         for y in 0..height {
-            cells[y * width] = WALL_BRICK;
-            cells[y * width + (width - 1)] = WALL_BRICK;
+            cells[y * width] = WALL_CONCRETE;
+            cells[y * width + (width - 1)] = WALL_CONCRETE;
         }
 
-        Self::fill_rect(&mut cells, width, 3, 3, 3, 3, WALL_STONE);
-        Self::fill_rect(&mut cells, width, 18, 3, 3, 3, WALL_WOOD);
-        Self::fill_rect(&mut cells, width, 3, 18, 3, 3, WALL_MOSS);
-        Self::fill_rect(&mut cells, width, 18, 18, 3, 3, WALL_STONE);
+        Self::fill_rect(&mut cells, width, 3, 3, 3, 3, WALL_SERVER);
+        Self::fill_rect(&mut cells, width, 18, 3, 3, 3, WALL_CIRCUIT);
+        Self::fill_rect(&mut cells, width, 3, 18, 3, 3, WALL_CODE);
+        Self::fill_rect(&mut cells, width, 18, 18, 3, 3, WALL_SERVER);
 
         Map {
             width,
@@ -58,16 +74,17 @@ impl Map {
         }
     }
 
+    #[allow(dead_code)] // utilidad de depuracion, util al agregar niveles nuevos
     pub fn debug_print(&self) {
         for y in 0..self.height {
             let mut line = String::with_capacity(self.width);
             for x in 0..self.width {
                 let ch = match self.get(x as i32, y as i32) {
                     WALL_NONE => '.',
-                    WALL_BRICK => '#',
-                    WALL_STONE => 'S',
-                    WALL_WOOD => 'W',
-                    WALL_MOSS => 'M',
+                    WALL_CONCRETE => '#',
+                    WALL_SERVER => 'S',
+                    WALL_CIRCUIT => 'K',
+                    WALL_CODE => 'X',
                     _ => '?',
                 };
                 line.push(ch);
@@ -110,10 +127,10 @@ mod tests {
     #[test]
     fn level_1_pillars_have_distinct_wall_types() {
         let map = Map::level_1();
-        assert_eq!(map.get(4, 4), WALL_STONE);
-        assert_eq!(map.get(19, 4), WALL_WOOD);
-        assert_eq!(map.get(4, 19), WALL_MOSS);
-        assert_eq!(map.get(19, 19), WALL_STONE);
+        assert_eq!(map.get(4, 4), WALL_SERVER);
+        assert_eq!(map.get(19, 4), WALL_CIRCUIT);
+        assert_eq!(map.get(4, 19), WALL_CODE);
+        assert_eq!(map.get(19, 19), WALL_SERVER);
     }
 
     #[test]

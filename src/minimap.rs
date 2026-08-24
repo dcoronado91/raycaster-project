@@ -4,7 +4,7 @@ use crate::raycaster;
 
 const SCALE: usize = 6; // pixeles por celda de mapa
 const MARGIN: usize = 10;
-const BACKGROUND: u32 = 0x10_10_10;
+const BACKGROUND: u32 = 0x02_08_02;
 const PLAYER_COLOR: u32 = 0xFF_D7_00;
 
 fn put_pixel(buffer: &mut [u32], width: usize, height: usize, x: i32, y: i32, color: u32) {
