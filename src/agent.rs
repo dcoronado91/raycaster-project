@@ -5,21 +5,54 @@ const AGENT_RADIUS: f64 = 0.25;
 const CHASE_SPEED: f64 = 2.2; // celdas por segundo; un poco mas lento que el jugador
 const DETECTION_RADIUS: f64 = 9.0;
 const CONTACT_RADIUS: f64 = 0.5;
+const RESPAWN_DELAY: f64 = 5.0; // segundos que tarda un Agente eliminado en volver
 
-/// Un Agente que patrulla el laberinto y persigue al jugador cuando lo detecta.
+/// Un Agente que patrulla el laberinto y persigue al jugador cuando lo
+/// detecta. Al recibir un disparo queda inactivo (invisible, sin perseguir
+/// ni tocar al jugador) durante `RESPAWN_DELAY` segundos y luego reaparece
+/// en su punto de origen.
 pub struct Agent {
     pub x: f64,
     pub y: f64,
+    spawn_x: f64,
+    spawn_y: f64,
+    respawn_timer: f64,
 }
 
 impl Agent {
     pub fn new(x: f64, y: f64) -> Self {
-        Agent { x, y }
+        Agent {
+            x,
+            y,
+            spawn_x: x,
+            spawn_y: y,
+            respawn_timer: 0.0,
+        }
     }
 
-    /// Si el jugador esta dentro del radio de deteccion, avanza hacia el
-    /// (deslizando sobre las paredes); si no, se queda quieto vigilando.
+    pub fn is_active(&self) -> bool {
+        self.respawn_timer <= 0.0
+    }
+
+    /// Marca al agente como eliminado por un disparo; vuelve a aparecer
+    /// pasado `RESPAWN_DELAY` en `update`.
+    pub fn hit(&mut self) {
+        self.respawn_timer = RESPAWN_DELAY;
+    }
+
+    /// Mientras esta inactivo, cuenta la espera de reaparicion. Activo,
+    /// persigue al jugador si esta dentro del radio de deteccion (deslizando
+    /// sobre las paredes); si no, se queda quieto vigilando.
     pub fn update(&mut self, map: &Map, player: &Player, dt: f64) {
+        if !self.is_active() {
+            self.respawn_timer -= dt;
+            if self.respawn_timer <= 0.0 {
+                self.x = self.spawn_x;
+                self.y = self.spawn_y;
+            }
+            return;
+        }
+
         let dx = player.pos_x - self.x;
         let dy = player.pos_y - self.y;
         let dist = (dx * dx + dy * dy).sqrt();
@@ -33,6 +66,9 @@ impl Agent {
     }
 
     pub fn is_touching_player(&self, player: &Player) -> bool {
+        if !self.is_active() {
+            return false;
+        }
         let dx = self.x - player.pos_x;
         let dy = self.y - player.pos_y;
         (dx * dx + dy * dy).sqrt() < CONTACT_RADIUS
@@ -128,6 +164,33 @@ mod tests {
         agent.update(&map, &player, 0.5);
 
         assert!(agent.y > 12.0, "el agente deberia avanzar hacia el jugador");
+    }
+
+    #[test]
+    fn hit_agent_becomes_inactive_and_stops_touching_player() {
+        let mut agent = Agent::new(10.0, 10.0);
+        let player = Player::new(10.1, 10.0);
+        assert!(agent.is_touching_player(&player));
+
+        agent.hit();
+
+        assert!(!agent.is_active());
+        assert!(!agent.is_touching_player(&player));
+    }
+
+    #[test]
+    fn inactive_agent_respawns_at_its_origin_after_the_delay() {
+        let map = Map::level_1();
+        let player = Player::new(0.0, 0.0); // lejos, no afecta el respawn
+        let mut agent = Agent::new(5.0, 5.0);
+
+        agent.hit();
+        agent.update(&map, &player, 4.0); // aun no pasa el tiempo de espera
+        assert!(!agent.is_active());
+
+        agent.update(&map, &player, 2.0); // ya se cumplio RESPAWN_DELAY (5.0s)
+        assert!(agent.is_active());
+        assert_eq!((agent.x, agent.y), (5.0, 5.0));
     }
 
     #[test]

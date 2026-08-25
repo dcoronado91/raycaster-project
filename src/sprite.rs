@@ -72,6 +72,36 @@ pub fn render(
     }
 }
 
+const CROSSHAIR_TOLERANCE_PX: i32 = 40;
+
+/// Indica si (world_x, world_y) esta dentro de la mira central de la
+/// pantalla, sin una pared por delante y dentro de `max_range`. Se usa
+/// para resolver si un disparo le acierta a un objetivo.
+pub fn is_targetable(
+    player: &Player,
+    world_x: f64,
+    world_y: f64,
+    z_buffer: &[f64],
+    width: usize,
+    max_range: f64,
+) -> bool {
+    let Some((transform_x, transform_y)) = project_to_camera_space(player, world_x, world_y)
+    else {
+        return false;
+    };
+    if transform_y > max_range {
+        return false;
+    }
+
+    let screen_x = ((width as f64 / 2.0) * (1.0 + transform_x / transform_y)) as i32;
+    if (screen_x - width as i32 / 2).abs() > CROSSHAIR_TOLERANCE_PX {
+        return false;
+    }
+
+    let center_col = (width / 2).min(z_buffer.len().saturating_sub(1));
+    transform_y < z_buffer[center_col]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +119,38 @@ mod tests {
     fn sprite_behind_player_is_not_projected() {
         let player = Player::new(0.0, 0.0);
         assert!(project_to_camera_space(&player, 0.0, 5.0).is_none());
+    }
+
+    #[test]
+    fn target_directly_ahead_with_clear_view_is_targetable() {
+        let player = Player::new(0.0, 0.0);
+        let z_buffer = vec![100.0; 800];
+
+        assert!(is_targetable(&player, 0.0, -5.0, &z_buffer, 800, 12.0));
+    }
+
+    #[test]
+    fn target_far_off_center_is_not_targetable() {
+        let player = Player::new(0.0, 0.0);
+        let z_buffer = vec![100.0; 800];
+
+        assert!(!is_targetable(&player, 5.0, -1.0, &z_buffer, 800, 12.0));
+    }
+
+    #[test]
+    fn target_behind_a_closer_wall_is_not_targetable() {
+        let player = Player::new(0.0, 0.0);
+        let mut z_buffer = vec![100.0; 800];
+        z_buffer[400] = 2.0; // pared mas cerca que el objetivo, tapandolo
+
+        assert!(!is_targetable(&player, 0.0, -5.0, &z_buffer, 800, 12.0));
+    }
+
+    #[test]
+    fn target_beyond_max_range_is_not_targetable() {
+        let player = Player::new(0.0, 0.0);
+        let z_buffer = vec![100.0; 800];
+
+        assert!(!is_targetable(&player, 0.0, -20.0, &z_buffer, 800, 12.0));
     }
 }
