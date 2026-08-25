@@ -1,4 +1,4 @@
-use crate::map::{Map, WALL_NONE};
+use crate::map::{Map, TILE_EXIT, WALL_NONE};
 use crate::player::Player;
 use crate::raycaster;
 
@@ -6,6 +6,7 @@ const SCALE: usize = 6; // pixeles por celda de mapa
 const MARGIN: usize = 10;
 const BACKGROUND: u32 = 0x02_08_02;
 const PLAYER_COLOR: u32 = 0xFF_D7_00;
+const EXIT_COLOR: u32 = 0xFF_FF_FF;
 
 fn put_pixel(buffer: &mut [u32], width: usize, height: usize, x: i32, y: i32, color: u32) {
     if x < 0 || y < 0 {
@@ -55,10 +56,13 @@ pub fn render(buffer: &mut [u32], screen_width: usize, screen_height: usize, map
     for my in 0..map.height {
         for mx in 0..map.width {
             let wall_id = map.get(mx as i32, my as i32);
-            if wall_id == WALL_NONE {
+            let color = if wall_id == WALL_NONE {
                 continue;
-            }
-            let color = raycaster::wall_color(wall_id);
+            } else if wall_id == TILE_EXIT {
+                EXIT_COLOR
+            } else {
+                raycaster::wall_color(wall_id)
+            };
             fill_cell(buffer, screen_width, screen_height, origin_x, origin_y, mx, my, color);
         }
     }

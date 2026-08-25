@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn agent_ignores_player_outside_detection_radius() {
-        let map = Map::level_1();
+        let map = Map::test_room();
         let mut agent = Agent::new(2.0, 2.0);
         let player = Player::new(20.0, 20.0); // muy lejos
 
@@ -157,7 +157,7 @@ mod tests {
 
     #[test]
     fn agent_chases_player_within_detection_radius() {
-        let map = Map::level_1();
+        let map = Map::test_room();
         let mut agent = Agent::new(12.0, 12.0);
         let player = Player::new(12.0, 16.0); // a 4 celdas, en espacio abierto
 
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn inactive_agent_respawns_at_its_origin_after_the_delay() {
-        let map = Map::level_1();
+        let map = Map::test_room();
         let player = Player::new(0.0, 0.0); // lejos, no afecta el respawn
         let mut agent = Agent::new(5.0, 5.0);
 

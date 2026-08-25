@@ -1,6 +1,7 @@
 mod agent;
 mod map;
 mod minimap;
+mod platform;
 mod player;
 mod raycaster;
 mod sprite;
@@ -24,18 +25,33 @@ fn from_rgb(r: u8, g: u8, b: u8) -> u32 {
     ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
+/// Color de un texel (tx, ty) del faro que marca la salida: un resplandor
+/// circular blanco-verdoso, mas brillante al centro, que "respira" con
+/// `pulse` (-1.0 a 1.0) para que se note incluso desde lejos.
+fn exit_beacon_pixel(tx: usize, ty: usize, pulse: f64) -> Option<u32> {
+    let dx = tx as f64 - 32.0;
+    let dy = ty as f64 - 32.0;
+    let dist = (dx * dx + dy * dy).sqrt();
+    let radius = 20.0 + pulse * 6.0;
+    if dist > radius {
+        return None;
+    }
+    let brightness = (140.0 + (1.0 - dist / radius) * 115.0) as u32;
+    Some((brightness << 16) | (0xFF << 8) | brightness)
+}
+
 fn main() {
-    let map = Map::level_1();
-    let mut player = Player::new(12.0, 12.0);
-    let spawn_x = player.pos_x;
-    let spawn_y = player.pos_y;
-    // Hasta 3 Agentes a la vez, repartidos en distintas esquinas del mapa
-    // (no todos en el mismo punto). Cada uno reaparece en su propio origen.
-    let mut agents: Vec<Agent> = vec![
-        Agent::new(21.0, 3.0),
-        Agent::new(3.0, 21.0),
-        Agent::new(21.0, 21.0),
-    ];
+    let map = Map::level(0);
+    let mut player = Player::new(map.player_spawn.0, map.player_spawn.1);
+    let spawn_x = map.player_spawn.0;
+    let spawn_y = map.player_spawn.1;
+    // Varios Agentes a la vez (hasta 6 en el nivel mas grande), repartidos en
+    // distintos puntos del laberinto. Cada uno reaparece en su propio origen.
+    let mut agents: Vec<Agent> = map
+        .agent_spawns
+        .iter()
+        .map(|&(x, y)| Agent::new(x, y))
+        .collect();
 
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
     let mut z_buffer: Vec<f64> = vec![0.0; WIDTH];
@@ -45,21 +61,22 @@ fn main() {
 
     window.set_target_fps(60);
     window.set_cursor_visibility(false);
+    platform::confine_cursor(window.get_window_handle());
 
     let ceiling_color = from_rgb(4, 10, 4);
     let floor_color = from_rgb(8, 16, 8);
 
     let start_time = Instant::now();
     let mut last_frame = Instant::now();
-    let mut last_mouse_x = window
-        .get_mouse_pos(MouseMode::Pass)
-        .map(|(x, _)| x)
-        .unwrap_or(0.0);
     let mut mouse_was_down = false;
     let mut shoot_cooldown = 0.0f64;
     let mut muzzle_flash_timer = 0.0f64;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        // Windows libera el confinamiento del cursor si la ventana pierde el
+        // foco, asi que se vuelve a aplicar en cada cuadro (llamada barata).
+        platform::confine_cursor(window.get_window_handle());
+
         let now = Instant::now();
         let dt = (now - last_frame).as_secs_f64();
         last_frame = now;
@@ -75,15 +92,16 @@ fn main() {
             muzzle_flash_timer = MUZZLE_FLASH_DURATION;
         }
 
-        // minifb no permite recentrar el cursor, asi que la rotacion se basa
-        // en el delta de posicion frame a frame en vez de un mouse-look "infinito".
+        // El cursor se recentra cada cuadro (mas abajo), asi que la rotacion
+        // se calcula contra el centro de la ventana en vez de contra la
+        // posicion del cuadro anterior: eso permite girar sin limites.
         if let Some((mouse_x, _)) = window.get_mouse_pos(MouseMode::Pass) {
-            let delta_x = (mouse_x - last_mouse_x) as f64;
-            last_mouse_x = mouse_x;
+            let delta_x = mouse_x as f64 - WIDTH as f64 / 2.0;
             if delta_x != 0.0 {
                 player.rotate(delta_x * MOUSE_SENSITIVITY);
             }
         }
+        platform::recenter_cursor(window.get_window_handle(), WIDTH as i32, HEIGHT as i32);
 
         let mut move_x = 0.0;
         let mut move_y = 0.0;
@@ -116,6 +134,13 @@ fn main() {
             // Reinicio temporal al detectar contacto; la pantalla de Game Over
             // llega cuando conectemos la maquina de estados (proximo commit).
             eprintln!("Un Agente te atrapo. Reiniciando posicion...");
+            player.pos_x = spawn_x;
+            player.pos_y = spawn_y;
+        }
+        if map.is_exit(player.pos_x, player.pos_y) {
+            // Reinicio temporal al llegar a la salida; la pantalla de exito
+            // llega cuando conectemos la maquina de estados (proximo commit).
+            eprintln!("Escapaste del laberinto. Reiniciando posicion...");
             player.pos_x = spawn_x;
             player.pos_y = spawn_y;
         }
@@ -183,6 +208,18 @@ fn main() {
             }
         }
 
+        let pulse = (elapsed * 3.0).sin();
+        sprite::render(
+            &mut buffer,
+            &z_buffer,
+            WIDTH,
+            HEIGHT,
+            &player,
+            map.exit.0,
+            map.exit.1,
+            |tx, ty| exit_beacon_pixel(tx, ty, pulse),
+        );
+
         minimap::render(&mut buffer, WIDTH, HEIGHT, &map, &player);
 
         let is_moving = move_x != 0.0 || move_y != 0.0;
@@ -200,4 +237,6 @@ fn main() {
             .update_with_buffer(&buffer, WIDTH, HEIGHT)
             .unwrap();
     }
+
+    platform::release_cursor();
 }

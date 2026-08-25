@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn try_move_is_blocked_by_a_wall() {
-        let map = Map::level_1();
+        let map = Map::test_room();
         let mut player = Player::new(4.5, 2.0); // justo arriba del pilar de piedra (filas/cols 3..6)
 
         player.try_move(&map, 0.0, 1.0); // intenta moverse hacia el pilar
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn try_move_slides_along_open_space() {
-        let map = Map::level_1();
+        let map = Map::test_room();
         let mut player = Player::new(12.0, 12.0); // centro abierto del mapa
 
         player.try_move(&map, 0.5, 0.0);
