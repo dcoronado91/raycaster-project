@@ -72,7 +72,7 @@ pub fn render(
     }
 }
 
-const CROSSHAIR_TOLERANCE_PX: i32 = 40;
+const CROSSHAIR_TOLERANCE_PX: i32 = 55;
 
 /// Indica si (world_x, world_y) esta dentro de la mira central de la
 /// pantalla, sin una pared por delante y dentro de `max_range`. Se usa

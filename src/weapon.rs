@@ -52,14 +52,23 @@ pub fn render(buffer: &mut [u32], width: usize, height: usize, flash_intensity: 
         put_pixel(buffer, width, height, cx + gx - 16, base_y - gy, METAL_DARK);
     }
 
-    // Corredera/armazon: cuerpo principal, con filo metalico claro arriba y
-    // serraciones traseras para dar sensacion de metal real (no un bloque liso).
+    // Gatillo: barra corta dentro del guardamonte.
+    for y in 62..76 {
+        fill_row(buffer, width, height, cx - 15, base_y - y, 1, METAL_HIGHLIGHT);
+    }
+
+    // Corredera/armazon: cuerpo principal, con filo metalico claro arriba,
+    // serraciones traseras y un par de remaches para que no se vea un
+    // bloque liso de metal.
     for y in 78..152 {
         let half_width = 30 + ((y - 78) * 8 / 74);
         for x in -half_width..=half_width {
             let is_edge = y > 144;
             let is_notch = x > half_width - 16 && (y / 4) % 2 == 0;
-            let color = if is_edge {
+            let is_rivet = (y == 100 || y == 122) && (x == -12 || x == 14);
+            let color = if is_rivet {
+                METAL_DARK
+            } else if is_edge {
                 METAL_HIGHLIGHT
             } else if is_notch {
                 METAL_DARK
@@ -70,6 +79,15 @@ pub fn render(buffer: &mut [u32], width: usize, height: usize, flash_intensity: 
         }
     }
 
+    // Martillo: nudo en la parte trasera-superior de la corredera (lado
+    // opuesto al canon), tipico de una pistola semiautomatica.
+    for y in 150..162 {
+        fill_row(buffer, width, height, cx - 24, base_y - y, 5, METAL_DARK);
+    }
+    for y in 158..162 {
+        fill_row(buffer, width, height, cx - 24, base_y - y, 5, METAL_HIGHLIGHT);
+    }
+
     // Canon: mas angosto, sobresale al frente-arriba de la corredera.
     for y in 150..186 {
         fill_row(buffer, width, height, cx + 10, base_y - y, 13, METAL_DARK);
@@ -78,9 +96,20 @@ pub fn render(buffer: &mut [u32], width: usize, height: usize, flash_intensity: 
     for y in 178..186 {
         fill_row(buffer, width, height, cx + 10, base_y - y, 4, METAL_HIGHLIGHT);
     }
+    // Boca del canon: anillo mas brillante alrededor de un centro oscuro,
+    // en vez de una punta plana.
+    for dy in -6..=6 {
+        for dx in -6..=6 {
+            let d = dx * dx + dy * dy;
+            if d <= 36 {
+                let color = if d <= 9 { METAL_DARK } else { METAL_HIGHLIGHT };
+                put_pixel(buffer, width, height, cx + 10 + dx, base_y - 188 + dy, color);
+            }
+        }
+    }
 
     // Mira frontal.
-    for y in 184..193 {
+    for y in 184..192 {
         put_pixel(buffer, width, height, cx + 10, base_y - y, METAL_HIGHLIGHT);
     }
 

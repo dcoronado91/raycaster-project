@@ -14,29 +14,7 @@ pub struct Map {
     cells: Vec<u8>,
 }
 
-/// Generador de numeros pseudoaleatorios minimo (xorshift32), solo para
-/// darle forma al laberinto de manera reproducible sin depender de la
-/// crate `rand`. La misma semilla siempre produce el mismo laberinto.
-struct SimpleRng(u32);
-
-impl SimpleRng {
-    fn new(seed: u32) -> Self {
-        SimpleRng(seed.max(1))
-    }
-
-    fn next_u32(&mut self) -> u32 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 17;
-        x ^= x << 5;
-        self.0 = x;
-        x
-    }
-
-    fn gen_range(&mut self, n: usize) -> usize {
-        (self.next_u32() as usize) % n
-    }
-}
+use crate::rng::SimpleRng;
 
 impl Map {
     /// Devuelve el id de casilla en (x, y). Fuera de rango se trata como
@@ -73,18 +51,44 @@ impl Map {
         }
     }
 
+    /// Comprueba si el segmento entre dos puntos del mundo esta libre de
+    /// paredes, muestreandolo en pasos cortos. Se usa para que el contacto
+    /// Agente-jugador no "atraviese" en diagonal el pilar solido que separa
+    /// dos pasillos perpendiculares: sin este chequeo, dos puntos pueden
+    /// quedar muy cerca en linea recta a traves de la esquina de un pilar
+    /// aunque en el laberinto real esten en corredores distintos.
+    pub fn has_line_of_sight(&self, x0: f64, y0: f64, x1: f64, y1: f64) -> bool {
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let distance = (dx * dx + dy * dy).sqrt();
+        if distance < 1e-6 {
+            return true;
+        }
+
+        // Al menos 4 pasos aunque el segmento sea muy corto: con muy pocas
+        // muestras se puede "saltar" justo por encima de una esquina de
+        // pilar sin pisarla nunca.
+        let steps = ((distance / 0.05).ceil() as i32).max(4);
+        for i in 0..=steps {
+            let t = i as f64 / steps as f64;
+            if self.is_wall((x0 + dx * t) as i32, (y0 + dy * t) as i32) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Los 3 niveles del juego: laberintos reales generados con recursive
     /// backtracker (garantizado conectado de principio a fin), cada uno mas
     /// grande y con mas Agentes que el anterior.
     pub fn level(index: usize) -> Self {
         match index {
-            0 => Self::generate(7, 7, 0x5EED_0001, WALL_CONCRETE, 2),
-            1 => Self::generate(9, 9, 0x5EED_0002, WALL_SERVER, 4),
-            _ => Self::generate(11, 11, 0x5EED_0003, WALL_CODE, 6),
+            0 => Self::generate(7, 7, 0x5EED_0001, WALL_CONCRETE, 4),
+            1 => Self::generate(9, 9, 0x5EED_0002, WALL_SERVER, 6),
+            _ => Self::generate(11, 11, 0x5EED_0003, WALL_CODE, 8),
         }
     }
 
-    #[allow(dead_code)] // se usara en la pantalla de seleccion de nivel (proximo commit)
     pub fn level_count() -> usize {
         3
     }
@@ -165,22 +169,27 @@ impl Map {
         cells[y * width + x] = WALL_NONE;
     }
 
-    /// Puntos de aparicion de Agentes, repartidos en celdas del laberinto
-    /// bien separadas entre si (todas garantizadas transitables, porque el
-    /// generador visita cada celda de la grilla).
+    /// Puntos de aparicion de Agentes: las 8 combinaciones de una grilla
+    /// 3x3 (izquierda/centro/derecha x arriba/medio/abajo) sin contar la
+    /// esquina donde arranca el jugador (0,0). Todas garantizadas
+    /// transitables, porque el generador visita cada celda de la grilla.
     fn pick_agent_spawns(cols: usize, rows: usize, count: usize) -> Vec<(f64, f64)> {
-        let candidates = [
-            (cols.saturating_sub(1), 0),          // esquina superior derecha
-            (0, rows.saturating_sub(1)),          // esquina inferior izquierda
-            (cols / 2, rows / 2),                 // centro
-            (cols / 2, 0),                        // borde superior
-            (0, rows / 2),                        // borde izquierdo
-            (cols.saturating_sub(1), rows / 2),   // borde derecho
-        ];
+        let xs = [0, cols / 2, cols.saturating_sub(1)];
+        let ys = [0, rows / 2, rows.saturating_sub(1)];
+
+        let mut candidates = Vec::with_capacity(8);
+        for &cy in &ys {
+            for &cx in &xs {
+                if (cx, cy) != (0, 0) {
+                    candidates.push((cx, cy));
+                }
+            }
+        }
+
         candidates
-            .iter()
+            .into_iter()
             .take(count)
-            .map(|&(cx, cy)| (cx as f64 * 2.0 + 1.5, cy as f64 * 2.0 + 1.5))
+            .map(|(cx, cy)| (cx as f64 * 2.0 + 1.5, cy as f64 * 2.0 + 1.5))
             .collect()
     }
 
@@ -282,6 +291,21 @@ mod tests {
     }
 
     #[test]
+    fn line_of_sight_is_clear_across_open_space() {
+        let map = Map::test_room();
+        assert!(map.has_line_of_sight(10.0, 10.0, 10.5, 10.5));
+    }
+
+    #[test]
+    fn line_of_sight_is_blocked_diagonally_across_a_pillar_corner() {
+        let map = Map::test_room();
+        // Un punto justo a la izquierda del pilar de piedra (filas/cols 3..6)
+        // y otro justo arriba de el: la linea recta entre ambos corta la
+        // esquina del pilar, aunque cada punto por separado es transitable.
+        assert!(!map.has_line_of_sight(2.5, 4.0, 4.0, 2.5));
+    }
+
+    #[test]
     fn there_are_three_levels() {
         assert_eq!(Map::level_count(), 3);
     }
@@ -323,7 +347,7 @@ mod tests {
 
     #[test]
     fn every_level_has_the_expected_agent_count_all_walkable() {
-        let expected_counts = [2, 4, 6];
+        let expected_counts = [4, 6, 8];
         for i in 0..Map::level_count() {
             let map = Map::level(i);
             assert_eq!(map.agent_spawns.len(), expected_counts[i], "nivel {i}");
