@@ -1,4 +1,5 @@
 mod agent;
+mod audio;
 mod hud;
 mod map;
 mod minimap;
@@ -92,6 +93,13 @@ fn main() {
     window.set_cursor_visibility(false);
     platform::confine_cursor(window.get_window_handle());
 
+    // Si no hay dispositivo de audio disponible, `audio` queda en `None` y
+    // el juego sigue funcionando en silencio (nunca crashea por esto).
+    let mut audio = audio::Audio::new();
+    if let Some(audio) = &mut audio {
+        audio.play_music();
+    }
+
     let ceiling_color = from_rgb(4, 10, 4);
     let floor_color = from_rgb(8, 16, 8);
 
@@ -129,9 +137,15 @@ fn main() {
                 session.ammo -= 1;
                 muzzle_flash_timer = MUZZLE_FLASH_DURATION;
                 shoot_pressed = true;
+                if let Some(audio) = &audio {
+                    audio.play_shoot();
+                }
             } else if session.reload_timer <= 0.0 {
                 // Pistola vacia: un clic en vacio dispara la recarga solo.
                 session.reload_timer = RELOAD_DURATION;
+                if let Some(audio) = &audio {
+                    audio.play_reload();
+                }
             }
         }
 
@@ -140,9 +154,15 @@ fn main() {
                 let level_count = Map::level_count();
                 if window.is_key_pressed(Key::Down, KeyRepeat::No) || window.is_key_pressed(Key::S, KeyRepeat::No) {
                     selected_level = (selected_level + 1) % level_count;
+                    if let Some(audio) = &audio {
+                        audio.play_menu_blip();
+                    }
                 }
                 if window.is_key_pressed(Key::Up, KeyRepeat::No) || window.is_key_pressed(Key::W, KeyRepeat::No) {
                     selected_level = (selected_level + level_count - 1) % level_count;
+                    if let Some(audio) = &audio {
+                        audio.play_menu_blip();
+                    }
                 }
                 if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                     session = Session::start(selected_level);
@@ -172,6 +192,9 @@ fn main() {
                 }
                 if window.is_key_pressed(Key::R, KeyRepeat::No) && session.reload_timer <= 0.0 && session.ammo < MAX_AMMO {
                     session.reload_timer = RELOAD_DURATION;
+                    if let Some(audio) = &audio {
+                        audio.play_reload();
+                    }
                 }
 
                 let mut move_x = 0.0;
@@ -229,6 +252,9 @@ fn main() {
                     }
                     if let Some((i, _)) = closest {
                         session.agents[i].hit();
+                        if let Some(audio) = &audio {
+                            audio.play_agent_hit();
+                        }
                     }
                 }
 
@@ -288,8 +314,14 @@ fn main() {
 
                 if session.agents.iter().any(|agent| agent.is_touching_player(&session.player, &session.map)) {
                     state = GameState::GameOver;
+                    if let Some(audio) = &audio {
+                        audio.play_game_over();
+                    }
                 } else if session.map.is_exit(session.player.pos_x, session.player.pos_y) {
                     state = GameState::Success;
+                    if let Some(audio) = &audio {
+                        audio.play_success();
+                    }
                 }
             }
 
