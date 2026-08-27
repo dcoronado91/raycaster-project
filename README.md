@@ -83,15 +83,6 @@ cargo test
 
 Cubre la generacion de laberintos (siempre conectados y resolubles, verificado con BFS), colisiones, la IA de los Agentes, la proyeccion de sprites y el hit-test de disparo, y el renderizado de texto/pantallas.
 
-## Capturas y GIF
-
-Ver screenshots/LEEME.txt para la lista exacta de imagenes esperadas y como tomarlas. El GIF se genera con:
-
-```
-powershell -ExecutionPolicy Bypass -File scripts\record_gif.ps1 -Seconds 10
-```
-
-(con el juego ya corriendo; el script graba la ventana "Raycaster" por titulo usando ffmpeg).
 
 ## Pendiente
 
