@@ -1,5 +1,6 @@
 mod agent;
 mod audio;
+mod bigmap;
 mod hud;
 mod map;
 mod minimap;
@@ -112,6 +113,7 @@ fn main() {
     let mut state = GameState::Welcome;
     let mut selected_level: usize = 0;
     let mut session = Session::start(0);
+    let mut show_big_map = false;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         // Windows libera el confinamiento del cursor si la ventana pierde el
@@ -166,6 +168,7 @@ fn main() {
                 }
                 if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                     session = Session::start(selected_level);
+                    show_big_map = false;
                     state = GameState::Playing;
                 }
                 screens::draw_welcome(&mut buffer, WIDTH, HEIGHT, elapsed, selected_level, level_count);
@@ -183,6 +186,10 @@ fn main() {
                     }
                 }
                 platform::recenter_cursor(window.get_window_handle(), WIDTH as i32, HEIGHT as i32);
+
+                if window.is_key_pressed(Key::M, KeyRepeat::No) {
+                    show_big_map = !show_big_map;
+                }
 
                 if session.reload_timer > 0.0 {
                     session.reload_timer = (session.reload_timer - dt).max(0.0);
@@ -225,92 +232,98 @@ fn main() {
                     agent.update(&session.map, &session.player, dt);
                 }
 
-                for y in 0..HEIGHT {
-                    let row_color = if y < HEIGHT / 2 { ceiling_color } else { floor_color };
-                    for x in 0..WIDTH {
-                        buffer[y * WIDTH + x] = row_color;
-                    }
-                }
-
-                raycaster::render(&mut buffer, &mut z_buffer, WIDTH, HEIGHT, &session.map, &session.player);
-
-                if shoot_pressed {
-                    // Si varios Agentes caen dentro de la mira, se le acierta al mas cercano.
-                    let mut closest: Option<(usize, f64)> = None;
-                    for (i, agent) in session.agents.iter().enumerate() {
-                        if !agent.is_active()
-                            || !sprite::is_targetable(&session.player, agent.x, agent.y, &z_buffer, WIDTH, SHOOT_RANGE)
-                        {
-                            continue;
-                        }
-                        let dx = agent.x - session.player.pos_x;
-                        let dy = agent.y - session.player.pos_y;
-                        let dist_sq = dx * dx + dy * dy;
-                        if closest.is_none_or(|(_, best)| dist_sq < best) {
-                            closest = Some((i, dist_sq));
+                if show_big_map {
+                    // El mapa grande reemplaza la vista 3D por completo mientras
+                    // esta activo; no tiene sentido apuntar/disparar sobre el.
+                    bigmap::render(&mut buffer, WIDTH, HEIGHT, &session.map, &session.player, &session.agents);
+                } else {
+                    for y in 0..HEIGHT {
+                        let row_color = if y < HEIGHT / 2 { ceiling_color } else { floor_color };
+                        for x in 0..WIDTH {
+                            buffer[y * WIDTH + x] = row_color;
                         }
                     }
-                    if let Some((i, _)) = closest {
-                        session.agents[i].hit();
-                        if let Some(audio) = &audio {
-                            audio.play_agent_hit();
+
+                    raycaster::render(&mut buffer, &mut z_buffer, WIDTH, HEIGHT, &session.map, &session.player);
+
+                    if shoot_pressed {
+                        // Si varios Agentes caen dentro de la mira, se le acierta al mas cercano.
+                        let mut closest: Option<(usize, f64)> = None;
+                        for (i, agent) in session.agents.iter().enumerate() {
+                            if !agent.is_active()
+                                || !sprite::is_targetable(&session.player, agent.x, agent.y, &z_buffer, WIDTH, SHOOT_RANGE)
+                            {
+                                continue;
+                            }
+                            let dx = agent.x - session.player.pos_x;
+                            let dy = agent.y - session.player.pos_y;
+                            let dist_sq = dx * dx + dy * dy;
+                            if closest.is_none_or(|(_, best)| dist_sq < best) {
+                                closest = Some((i, dist_sq));
+                            }
+                        }
+                        if let Some((i, _)) = closest {
+                            session.agents[i].hit();
+                            if let Some(audio) = &audio {
+                                audio.play_agent_hit();
+                            }
                         }
                     }
-                }
 
-                let walk_phase = (elapsed * 4.0) as i32;
+                    let walk_phase = (elapsed * 4.0) as i32;
 
-                // Se pintan de mas lejos a mas cerca para que un agente al
-                // frente tape correctamente a uno detras (pintor's algorithm).
-                let mut draw_order: Vec<usize> = (0..session.agents.len()).collect();
-                draw_order.sort_by(|&a, &b| {
-                    let dist_sq = |agent: &Agent| {
-                        let dx = agent.x - session.player.pos_x;
-                        let dy = agent.y - session.player.pos_y;
-                        dx * dx + dy * dy
-                    };
-                    dist_sq(&session.agents[b]).total_cmp(&dist_sq(&session.agents[a]))
-                });
-                for i in draw_order {
-                    if session.agents[i].is_active() {
-                        sprite::render(
-                            &mut buffer,
-                            &z_buffer,
-                            WIDTH,
-                            HEIGHT,
-                            &session.player,
-                            session.agents[i].x,
-                            session.agents[i].y,
-                            |tx, ty| agent::agent_pixel(tx, ty, walk_phase),
-                        );
+                    // Se pintan de mas lejos a mas cerca para que un agente al
+                    // frente tape correctamente a uno detras (pintor's algorithm).
+                    let mut draw_order: Vec<usize> = (0..session.agents.len()).collect();
+                    draw_order.sort_by(|&a, &b| {
+                        let dist_sq = |agent: &Agent| {
+                            let dx = agent.x - session.player.pos_x;
+                            let dy = agent.y - session.player.pos_y;
+                            dx * dx + dy * dy
+                        };
+                        dist_sq(&session.agents[b]).total_cmp(&dist_sq(&session.agents[a]))
+                    });
+                    for i in draw_order {
+                        if session.agents[i].is_active() {
+                            sprite::render(
+                                &mut buffer,
+                                &z_buffer,
+                                WIDTH,
+                                HEIGHT,
+                                &session.player,
+                                session.agents[i].x,
+                                session.agents[i].y,
+                                |tx, ty| agent::agent_pixel(tx, ty, walk_phase),
+                            );
+                        }
                     }
+
+                    let pulse = (elapsed * 3.0).sin();
+                    sprite::render(
+                        &mut buffer,
+                        &z_buffer,
+                        WIDTH,
+                        HEIGHT,
+                        &session.player,
+                        session.map.exit.0,
+                        session.map.exit.1,
+                        |tx, ty| exit_beacon_pixel(tx, ty, pulse),
+                    );
+
+                    minimap::render(&mut buffer, WIDTH, HEIGHT, &session.map, &session.player);
+
+                    let is_moving = move_x != 0.0 || move_y != 0.0;
+                    let bob_amplitude = if is_moving { 6.0 } else { 2.0 };
+                    let bob_offset = (elapsed * 8.0).sin() * bob_amplitude;
+                    weapon::render(
+                        &mut buffer,
+                        WIDTH,
+                        HEIGHT,
+                        muzzle_flash_timer / MUZZLE_FLASH_DURATION,
+                        bob_offset,
+                    );
+                    hud::draw_ammo(&mut buffer, WIDTH, HEIGHT, session.ammo, MAX_AMMO, session.reload_timer > 0.0);
                 }
-
-                let pulse = (elapsed * 3.0).sin();
-                sprite::render(
-                    &mut buffer,
-                    &z_buffer,
-                    WIDTH,
-                    HEIGHT,
-                    &session.player,
-                    session.map.exit.0,
-                    session.map.exit.1,
-                    |tx, ty| exit_beacon_pixel(tx, ty, pulse),
-                );
-
-                minimap::render(&mut buffer, WIDTH, HEIGHT, &session.map, &session.player);
-
-                let is_moving = move_x != 0.0 || move_y != 0.0;
-                let bob_amplitude = if is_moving { 6.0 } else { 2.0 };
-                let bob_offset = (elapsed * 8.0).sin() * bob_amplitude;
-                weapon::render(
-                    &mut buffer,
-                    WIDTH,
-                    HEIGHT,
-                    muzzle_flash_timer / MUZZLE_FLASH_DURATION,
-                    bob_offset,
-                );
-                hud::draw_ammo(&mut buffer, WIDTH, HEIGHT, session.ammo, MAX_AMMO, session.reload_timer > 0.0);
 
                 if session.agents.iter().any(|agent| agent.is_touching_player(&session.player, &session.map)) {
                     state = GameState::GameOver;
@@ -328,6 +341,7 @@ fn main() {
             GameState::GameOver => {
                 if window.is_key_pressed(Key::Enter, KeyRepeat::No) {
                     session = Session::start(selected_level);
+                    show_big_map = false;
                     state = GameState::Playing;
                 }
                 screens::draw_game_over(&mut buffer, WIDTH, HEIGHT, elapsed);
@@ -342,6 +356,7 @@ fn main() {
                     } else {
                         selected_level += 1;
                         session = Session::start(selected_level);
+                        show_big_map = false;
                         state = GameState::Playing;
                     }
                 }
