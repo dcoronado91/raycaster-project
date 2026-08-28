@@ -4,7 +4,7 @@ Un raycaster estilo Wolfenstein 3D hecho en **Rust puro** (sin motor de juegos, 
 
 ## Video de la entrega
 
-> [Pegar aqui el link al video de demostracion]
+> https://youtu.be/5geK5GDFuJI
 
 ![Demo](screenshots/demo.gif)
 
